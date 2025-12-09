@@ -5,41 +5,39 @@ const crypto = require("crypto");
 const { sendEmail } = require("../config/email");
 
 /* LOGIN ADMIN */
+/* LOGIN ADMIN */
 exports.loginAdmin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validation
     if (!email || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    // Check admin exists
     const admin = await Admin.findOne({ email });
     if (!admin) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    // Compare password
     const isMatch = await bcrypt.compare(password, admin.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    // Generate Token
-    // Create JWT and a short opaque session token stored in a cookie.
-    const token = jwt.sign({ id: admin._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+    // -------- Generate Tokens --------
+    const token = jwt.sign({ id: admin._id }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
+    });
 
     const sessionToken = crypto.randomBytes(32).toString("hex");
-    const sessionExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+    const sessionExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
 
-    // Persist tokens on the admin record
     admin.jwtToken = token;
     admin.sessionToken = sessionToken;
     admin.sessionExpires = new Date(sessionExpiry);
     await admin.save();
 
-    // Set httpOnly cookie with opaque session token
+    // Cookie for refresh-like behavior
     const cookieOpts = {
       httpOnly: true,
       maxAge: 7 * 24 * 60 * 60 * 1000,
@@ -49,16 +47,28 @@ exports.loginAdmin = async (req, res) => {
 
     res.cookie("session", sessionToken, cookieOpts);
 
-    // Return minimal info (no jwt in response). Client can rely on cookie.
-    res.json({
+    // -------- Final Response (your requested format) --------
+    return res.status(200).json({
       success: true,
-      message: "Login success",
-      admin: { id: admin._id, email: admin.email },
+      user: {
+        id: admin._id,
+        email: admin.email,
+        // name: admin.name || null,
+        role: "admin",
+        // phone: admin.phone || null,
+      },
+      tokens: {
+        accessToken: token,
+        refreshToken: sessionToken,
+        idToken: token,
+        expiresIn: 7 * 24 * 60 * 60, // seconds
+      },
+      platform: "admin-panel",
     });
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
